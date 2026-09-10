@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>실시간 접속자 대시보드 - 스트레스 테스트</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 0; }
+    header { background:#222; color:#fff; padding:12px 16px; }
+    #status { padding:10px 16px; }
+    #items { padding:8px 16px; }
+    .item { display:flex; gap:12px; align-items:center; padding:8px; border-bottom:1px solid #eee; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+    .left { width:64px; height:48px; background:#f3f3f3; display:flex; align-items:center; justify-content:center; font-weight:bold; }
+    .right { flex:1; }
+    .title { font-size:14px; color:#222; }
+    .meta { font-size:12px; color:#666; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 style="margin:0;font-size:18px;">실시간 접속자 대시보드 (스트레스 테스트)</h1>
+  </header>
+  <div id="controls" style="padding:12px 16px; background:#fafafa; border-bottom:1px solid #eee;">
+    <label>Count: <input id="count" type="number" value="50000" style="width:100px" /></label>
+    <label>Delay min(s): <input id="delay_min" type="number" step="0.1" value="2.0" style="width:80px" /></label>
+    <label>Delay max(s): <input id="delay_max" type="number" step="0.1" value="3.0" style="width:80px" /></label>
+    <label>CPU work: <input id="cpu_work" type="number" value="200000" style="width:100px" /></label>
+    <button id="fetchBtn">불러오기</button>
+    <button id="clearBtn">지우기</button>
+  </div>
+  <div id="status">데이터 로딩 대기중...</div>
+  <div id="items"></div>
+
+  <script>
+    async function loadAndRender() {
+      const status = document.getElementById('status');
+      const container = document.getElementById('items');
+      try {
+          const params = new URLSearchParams({
+            count: document.getElementById('count').value,
+            delay_min: document.getElementById('delay_min').value,
+            delay_max: document.getElementById('delay_max').value,
+            cpu_work: document.getElementById('cpu_work').value,
+          });
+
+          const startFetch = performance.now();
+          const resp = await fetch('/api/dummy?' + params.toString());
+          const afterFetch = performance.now();
+        if (!resp.ok) throw new Error('응답 오류');
+          const data = await resp.json();
+          status.textContent = '데이터 수신 완료, 렌더링 시작... 총 ' + data.length + '개';
+
+        // 한 번에 많은 DOM 조작: 화면 렌더링 렉 유발 의도
+          const t0 = performance.now();
+        for (let i = 0; i < data.length; i++) {
+          const item = data[i];
+          const el = document.createElement('div');
+          el.className = 'item';
+          el.innerHTML = '<div class="left">' + item.id + '</div>' +
+                         '<div class="right"><div class="title">' + item.name + '</div>' +
+                         '<div class="meta">Value: ' + item.value.toFixed(6) + '</div></div>';
+          container.appendChild(el);
+        }
+        const t1 = performance.now();
+        status.textContent = '렌더링 완료: ' + data.length + '개, 소요 ' + Math.round(t1 - t0) + 'ms';
+
+        // 성능 메트릭 전송
+        const metrics = {
+          count: data.length,
+          fetchDurationMs: Math.round(afterFetch - startFetch),
+          renderDurationMs: Math.round(t1 - t0),
+          userAgent: navigator.userAgent,
+          timestamp: Date.now()
+        };
+        // 비동기 전송 (결과에 영향 주지 않음)
+        navigator.sendBeacon('/api/metrics', JSON.stringify(metrics));
+      } catch (err) {
+        status.textContent = '오류: ' + err.message;
+        console.error(err);
+      }
+    }
+
+    // 페이지 로드 후 바로 실행
+    window.addEventListener('load', () => {
+      document.getElementById('fetchBtn').addEventListener('click', () => {
+        // clear before rendering
+        document.getElementById('items').innerHTML = '';
+        loadAndRender();
+      });
+      document.getElementById('clearBtn').addEventListener('click', () => {
+        document.getElementById('items').innerHTML = '';
+        document.getElementById('status').textContent = '화면 비움';
+      });
+      // 자동 실행
+      loadAndRender();
+    });
+  </script>
+</body>
+</html>
